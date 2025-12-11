@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  jivanu-rag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jivanu-rag-chatbot
+    restart: unless-stopped
+    ports:
+      - "80:8501"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-large}
+      - LLM_MODEL_NAME=${LLM_MODEL_NAME:-gpt-4o}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.3}
+      - CHUNK_SIZE=${CHUNK_SIZE:-1000}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP:-200}
+      - RETRIEVAL_K=${RETRIEVAL_K:-10}
+      - MAX_HISTORY_TURNS=${MAX_HISTORY_TURNS:-8}
+    volumes:
+      # Persistent data storage
+      - ./data/uploads:/app/uploaded_files
+      - ./data/vector_db:/app/vector_db
+      - ./data/conversations:/app/conversations
+      - ./data/extracted_assets:/app/extracted_assets
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G

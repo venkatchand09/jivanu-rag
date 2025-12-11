@@ -1,0 +1,30 @@
+# Sensitive files
+.env
+*.env
+
+# Data directories (will be on server)
+data/
+vector_db/
+conversations/
+extracted_assets/
+uploads/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
