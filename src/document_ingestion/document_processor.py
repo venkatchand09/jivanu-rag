@@ -2,7 +2,7 @@
 """
 Enhanced document processing module with image and table extraction
 Optimized for scientific PDFs with complex layouts
-DOCKER-READY: Uses environment variable for Tesseract path
+NO OCR - For native PDF processing only
 """
 
 from typing import List, Union
@@ -10,18 +10,9 @@ from pathlib import Path
 import fitz  # PyMuPDF
 import pandas as pd
 from PIL import Image
-import pytesseract
 import io
 import os
 from tqdm import tqdm
-
-# SET TESSERACT PATH FROM ENVIRONMENT VARIABLE (Docker-compatible)
-if os.getenv('TESSERACT_CMD'):
-    pytesseract.pytesseract.tesseract_cmd = os.getenv('TESSERACT_CMD')
-elif os.name == 'nt':  # Windows
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-else:  # Linux/Mac
-    pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -53,7 +44,7 @@ class DocumentProcessor:
         self.assets_dir.mkdir(exist_ok=True)
     
     def extract_images_from_pdf(self, pdf_path: Union[str, Path], output_dir: Path) -> List[str]:
-        """Extract images from PDF and perform OCR"""
+        """Extract images from PDF and save them"""
         pdf_path = Path(pdf_path)
         output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -85,14 +76,29 @@ class DocumentProcessor:
         doc.close()
         return image_paths
     
-    def ocr_image(self, image_path: str) -> str:
-        """Perform OCR on extracted image"""
+    def extract_image_captions(self, pdf_path: Union[str, Path], page_num: int) -> str:
+        """
+        Extract text near images to get captions
+        This replaces OCR by extracting figure captions from the PDF text
+        """
         try:
-            img = Image.open(image_path)
-            text = pytesseract.image_to_string(img)
-            return text.strip()
+            doc = fitz.open(pdf_path)
+            page = doc[page_num]
+            text = page.get_text()
+            doc.close()
+            
+            # Look for common caption patterns
+            caption_keywords = ["Figure", "Fig.", "Image", "Diagram", "Chart"]
+            lines = text.split('\n')
+            captions = []
+            
+            for line in lines:
+                if any(keyword in line for keyword in caption_keywords):
+                    captions.append(line.strip())
+            
+            return " ".join(captions)
         except Exception as e:
-            print(f"OCR error on {image_path}: {e}")
+            print(f"Error extracting captions: {e}")
             return ""
     
     def extract_tables_from_pdf(self, pdf_path: Union[str, Path], output_dir: Path) -> List[str]:
@@ -165,22 +171,25 @@ class DocumentProcessor:
         except Exception as e:
             print(f"Error loading text from {pdf_path}: {e}")
         
-        # Extract and process images
+        # Extract and store images with captions
         if include_images:
             try:
                 image_paths = self.extract_images_from_pdf(pdf_path, images_dir)
                 
                 for img_path in image_paths:
-                    ocr_text = self.ocr_image(img_path)
+                    # Extract page number from filename
+                    page_num = int(img_path.split('page_')[1].split('_')[0]) - 1
+                    caption = self.extract_image_captions(pdf_path, page_num)
                     
-                    if ocr_text and len(ocr_text) > 50:  # Only include meaningful text
+                    if caption:
                         img_doc = Document(
-                            page_content=f"[IMAGE OCR TEXT]\n{ocr_text}",
+                            page_content=f"[IMAGE CAPTION]\n{caption}",
                             metadata={
                                 "source": str(pdf_path),
-                                "type": "image_ocr",
+                                "type": "image_caption",
                                 "image_path": img_path,
-                                "pdf_name": pdf_path.name
+                                "pdf_name": pdf_path.name,
+                                "page": page_num + 1
                             }
                         )
                         documents.append(img_doc)
@@ -225,7 +234,7 @@ class DocumentProcessor:
         
         Args:
             directory: Path to directory containing PDFs
-            include_images: Whether to extract and OCR images
+            include_images: Whether to extract images and captions
             include_tables: Whether to extract tables
             
         Returns:
@@ -263,7 +272,7 @@ class DocumentProcessor:
         
         Args:
             sources: List of URLs or directory paths
-            include_images: Extract images
+            include_images: Extract images and captions
             include_tables: Extract tables
             
         Returns:
